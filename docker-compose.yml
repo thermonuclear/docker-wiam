@@ -1,0 +1,92 @@
+# Версия docker-compose
+#version: '3.8'
+
+# Создаем отдельные контейнеры
+services:
+    # контейнер с nginx
+    nginx:
+        build:
+            context: .
+            dockerfile: nginx.dockerfile
+        volumes:
+            # папка с проектом
+            - ../app:/var/www/app
+            # конфиг для nginx
+            - "./nginx/conf:/etc/nginx/conf.d"
+            # sertificates
+            - "./nginx/ssl:/etc/nginx/ssl"
+            # scripts
+            - "./nginx/scripts:/etc/nginx/scripts"
+            # папка с логами
+            - ./storage/log/nginx:/var/log/nginx
+        ports:
+            - "80:80"
+            - "443:443"
+            - "1081:1081"
+        depends_on:
+            - php-fpm83
+        # Подключаем к общей сети с другими контейнерами
+        networks:
+            default:
+                # задаем статический ip-адрес
+                ipv4_address: 172.36.0.11
+    # Контейнер с менеджером php8.3
+    php-fpm83:
+        build:
+            context: .
+            dockerfile: php-fpm83.dockerfile
+        volumes:
+            - ../app:/var/www/app
+            # свой конфиг
+            - ./php-fpm83/project.ini:/usr/local/etc/php/custom.d/project.ini
+            - ./php-fpm83/xdebug.ini:/usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini
+        environment:
+            - "DB_POSTGRESQL_HOST=postgresql"
+            - "DB_POSTGRESQL_PORT=5432"
+            - "PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/usr/local/etc/php/custom.d"
+            - "PHP_IDE_CONFIG=serverName=server-wiam-php-83"
+        ports:
+            - "9000:9000"
+            - "1080:1080"
+        # Подключаем к общей сети с другими контейнерами
+        networks:
+            default:
+                # задаем статический ip-адрес
+                ipv4_address: 172.36.0.2
+        extra_hosts:
+            # добавляем домены в файл hosts, чтобы запросы на эти адреса шли на наш nginx
+            - "test-yii2-wiam:172.36.0.11"
+            - "host.docker.internal:host-gateway"
+            - "localhost:172.36.0.7" # IP контейнера db
+    # Контейнер с базой данных postgreSql
+    postgresql:
+        build:
+            context: .
+            dockerfile: postgresql.dockerfile
+        environment:
+            POSTGRES_DB: "loans"
+            POSTGRES_USER: "user"
+            POSTGRES_PASSWORD: "password"
+            # PGDATA: "/var/lib/postgresql/data/pgdata"
+        ports:
+            - "5432:5432"
+        volumes:
+            # подключаем папку для хранения БД
+            - pgdata1:/var/lib/postgresql/data
+            # подключаем папку для хранения дампов баз
+            - ./storage/postgresql/dump:/dump_db
+        networks:
+            default:
+                # задаем статический ip-адрес
+                ipv4_address: 172.36.0.7
+
+# Создаем общую сеть deafult для всех контейнеров
+networks:
+    default:
+        ipam:
+            driver: default
+            config:
+                - subnet: "172.36.0.0/16"
+volumes:
+    pgdata1:
+      external: true
